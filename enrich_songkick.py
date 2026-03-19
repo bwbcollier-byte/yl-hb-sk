@@ -230,26 +230,30 @@ def main():
         data = r.json()
         
         if "error" in data:
-            print(f"[Error] Fetching records: {data}")
+            print(f"❌ [Error] Fetching records: {data}", flush=True)
             break
             
         records = data.get("records", [])
         if not records:
+            print("✨ No more records found in the view.", flush=True)
             break
+            
+        print(f"📂 Fetched {len(records)} records. Processing...", flush=True)
             
         for record in records:
             if args.limit and processed_count >= args.limit:
+                print(f"🛑 Reached limit of {args.limit} records.", flush=True)
                 break
                 
             rec_id = record["id"]
             fields = record.get("fields", {})
             sk_url = fields.get("Soc Songkick", "").strip()
-            name = fields.get("Name", "Unknown")
+            name = fields.get("Name", "Unknown artist")
             
-            print(f"[{processed_count + 1}] Processing: {name}")
+            print(f"🔍 [{processed_count + 1}] Processing: {name}", end=" ", flush=True)
             
             if not sk_url:
-                print("  Skipping: No Songkick URL")
+                print("⏭️  Skipped (No Songkick URL)", flush=True)
                 processed_count += 1
                 continue
                 
@@ -276,12 +280,16 @@ def main():
                 update_fields = {k: v for k, v in update_fields.items() if v and v != "[]" and v != "None"}
                 
                 batch_queue.append({"id": rec_id, "fields": update_fields})
+                print(f"✅ Scraping done (Trackers: {sk_data['trackers'] or 'N/A'})", flush=True)
                 
                 if len(batch_queue) >= 10:
-                    print(f"  --> Flushing batch of {len(batch_queue)}...")
-                    update_records_bulk(batch_queue)
+                    print(f"  📤 Flushing batch of {len(batch_queue)} to Airtable...", flush=True)
+                    if update_records_bulk(batch_queue):
+                         print("  🎨 Batch update successful.", flush=True)
                     batch_queue = []
                     time.sleep(0.5)
+            else:
+                print("❌ Failed to scrape profile.", flush=True)
             
             processed_count += 1
             time.sleep(1.2) # Polite scraping
@@ -295,10 +303,11 @@ def main():
         params["offset"] = offset
 
     if batch_queue:
-        print(f"  --> Final flush of {len(batch_queue)}...")
-        update_records_bulk(batch_queue)
+        print(f"  📤 Final flush of {len(batch_queue)} to Airtable...", flush=True)
+        if update_records_bulk(batch_queue):
+            print("  🎨 Final update successful.", flush=True)
 
-    print(f"\nDone! Processed {processed_count} records.")
+    print(f"\n🎉 Done! Total processed: {processed_count} records.", flush=True)
 
 if __name__ == "__main__":
     main()
