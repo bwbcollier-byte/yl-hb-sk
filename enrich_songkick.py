@@ -266,13 +266,13 @@ def main():
                     "Soc SK Bio": sk_data["bio"],
                     "Soc SK touring": sk_data["touring"],
                     "Soc SK Concerts JSON": json.dumps(sk_data["concerts"], ensure_ascii=False),
-                    "SK Most played (Array)": sk_data["most_played"],
+                    "SK Most played": sk_data["most_played"],
                     "SK Popularity ranking": sk_data["popularity_ranking"],
                     "SK Appears most with Names": sk_data["collab_names"],
                     "SK Appears most with Urls": sk_data["collab_urls"],
                     "SK Distance traveled": sk_data["distance"],
-                    "SK Related artists Names (Array)": sk_data["rel_names"],
-                    "SK Related artists Links (Array)": sk_data["rel_urls"],
+                    "SK Related artists Names": sk_data["rel_names"],
+                    "SK Related artists Links": sk_data["rel_urls"],
                     "Last Check": today_str
                 }
                 
