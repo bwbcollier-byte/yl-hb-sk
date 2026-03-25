@@ -10,9 +10,9 @@ import re
 # --- Config ---
 # Use environment variables for secrets when running in GitHub Actions or locally with a .env
 AIRTABLE_API_KEY = os.environ.get("AIRTABLE_API_KEY")
-BASE_ID = "appUEhyrtwZUV5sxO"
-TABLE_ID = "tblF13Ue2J0VdaLb1"
-VIEW_ID = "viwWo16zremTogroi" # "To Process" View
+BASE_ID = "appENJEi9WyVXFrNU"
+TABLE_ID = "tbl49Xnh3IIYjOi5q"
+VIEW_ID = "viwPlVr3XCD4lF9Pf"
 
 if not AIRTABLE_API_KEY:
     print("Error: AIRTABLE_API_KEY environment variable not set.")
