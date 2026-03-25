@@ -51,12 +51,24 @@ def fetch_lastfm(method: str, artist: str, **extra):
         "format":  "json",
         **extra
     }
-    try:
-        r = requests.get(LASTFM_BASE_URL, params=params, timeout=12)
-        if r.status_code == 200:
-            return r.json()
-    except Exception as e:
-        print(f"  [WARN] {method} failed for '{artist}': {e}")
+    # Increased timeout and added a retry loop for stability
+    for attempt in range(2):
+        try:
+            r = requests.get(LASTFM_BASE_URL, params=params, timeout=25)
+            if r.status_code == 200:
+                return r.json()
+            elif r.status_code == 404:
+                return None # Artist not found
+            else:
+                print(f"  [WARN] {method} response: {r.status_code}", flush=True)
+        except (requests.exceptions.Timeout, requests.exceptions.ReadTimeout):
+            if attempt == 0:
+                print(f"  ⏳ Timeout on {method}, retrying...", flush=True)
+                time.sleep(1)
+            else:
+                print(f"  ❌ {method} timed out after 2 attempts.", flush=True)
+        except Exception as e:
+            print(f"  [WARN] {method} error: {e}", flush=True)
     return None
 
 def enrich_lastfm_artist(artist_name: str, lastfm_url: str) -> dict:
