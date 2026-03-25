@@ -212,8 +212,23 @@ def enrich_lastfm_artist(artist_name: str, lastfm_url: str, existing_fields: dic
 def update_records_bulk(records_batch):
     if not records_batch: return True
     url = f"https://api.airtable.com/v0/{BASE_ID}/{TABLE_ID}"
-    r = requests.patch(url, headers=AIRTABLE_HEADERS, json={"records": records_batch}, timeout=15)
-    return r.status_code == 200
+    
+    # Using a longer timeout and retry loop specifically for Airtable as it can be slow with large JSON payloads
+    for attempt in range(2):
+        try:
+            r = requests.patch(url, headers=AIRTABLE_HEADERS, json={"records": records_batch}, timeout=40)
+            if r.status_code == 200:
+                return True
+            else:
+                print(f"  [Error] Airtable Patch Failed ({r.status_code}): {r.text}", flush=True)
+                return False
+        except (requests.exceptions.Timeout, requests.exceptions.ReadTimeout):
+            if attempt == 0:
+                print(f"  📤 Airtable Timeout, retrying final attempt...", flush=True)
+                time.sleep(2)
+            else:
+                print(f"  ❌ Airtable batch update failed twice due to timeout.", flush=True)
+    return False
 
 def main():
     parser = argparse.ArgumentParser()
