@@ -1,5 +1,6 @@
 import os
 import requests
+from bs4 import BeautifulSoup
 import re
 import time
 import argparse
@@ -37,6 +38,35 @@ def extract_artist_slug(url: str):
         return slug, name
     return None, None
 
+def scrape_lastfm_events(artist_name):
+    """Scrape upcoming events as Last.fm API no longer supports this."""
+    events = []
+    event_ids = []
+    # slug = artist_name.replace(" ", "+") # Already handled by caller usually
+    url = f"https://www.last.fm/music/{artist_name}/+events"
+    headers = {"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"}
+    try:
+        r = requests.get(url, headers=headers, timeout=15)
+        if r.status_code == 200:
+            soup = BeautifulSoup(r.text, 'html.parser')
+            rows = soup.select(".events-list-item")
+            for row in rows:
+                event_id = row.get("data-event-id")
+                event_name = row.select_one(".events-list-item-name")
+                event_date = row.select_one(".events-list-item-date")
+                event_venue = row.select_one(".events-list-item-venue")
+                if event_name:
+                    events.append({
+                        "id": event_id,
+                        "name": event_name.get_text(strip=True),
+                        "date": event_date.get_text(strip=True) if event_date else "",
+                        "venue": event_venue.get_text(strip=True) if event_venue else ""
+                    })
+                    if event_id: event_ids.append(event_id)
+    except Exception as e:
+        print(f"  [WARN] Event scraping failed: {e}", flush=True)
+    return events, event_ids
+
 def clean_bio(text: str) -> str:
     """Strip Last.fm attribution tags."""
     if not text: return ""
@@ -71,8 +101,21 @@ def fetch_lastfm(method: str, artist: str, **extra):
             print(f"  [WARN] {method} error: {e}", flush=True)
     return None
 
-def enrich_lastfm_artist(artist_name: str, lastfm_url: str) -> dict:
+def update_history(existing_json_str, new_value, today):
+    """Append a new historical entry to the JSON string."""
+    try:
+        history = json.loads(existing_json_str) if existing_json_str else []
+    except:
+        history = []
+    
+    if not any(entry.get("date") == today for entry in history):
+        history.append({"date": today, "value": new_value})
+    
+    return json.dumps(history)
+
+def enrich_lastfm_artist(artist_name: str, lastfm_url: str, existing_fields: dict) -> dict:
     """Fetch all requested data from Last.fm."""
+    today = date.today().isoformat()
     fields = {
         "lfm_url": lastfm_url,
         "lfm_id": "",
@@ -87,16 +130,20 @@ def enrich_lastfm_artist(artist_name: str, lastfm_url: str) -> dict:
         "lfm_bio_published_date": "",
         "lfm_wiki_url": "",
         "lfm_enriched": "No",
-        "lfm_last_check": date.today().isoformat(),
+        "lfm_last_check": today,
         "lfm_similar_rtists": "",
         "lfm_similar_artists_urls": "",
         "lfm_top_tracks": "",
         "lfm_top_tracks_urls": "",
         "lfm_top_albums": "",
-        "lfm_top_albums_urls": ""
+        "lfm_top_albums_urls": "",
+        "lfm_events_json": "",
+        "lfm_events_ids": "",
+        "lfm_listeners_running": existing_fields.get("lfm_listeners_running", ""),
+        "lfm_playcount_running": existing_fields.get("lfm_playcount_running", "")
     }
 
-    slug, _ = extract_artist_slug(lastfm_url)
+    slug, artist_slug_name = extract_artist_slug(lastfm_url)
     fields["lfm_id"] = slug if slug else ""
 
     # 1. artist.getinfo (THE MAIN CALL)
@@ -107,10 +154,17 @@ def enrich_lastfm_artist(artist_name: str, lastfm_url: str) -> dict:
 
     a = info["artist"]
     stats = a.get("stats", {})
-    fields["lfm_listeners"] = stats.get("listeners", "0")
-    fields["lfm_playcount"] = stats.get("playcount", "0")
+    listen_count = stats.get("listeners", "0")
+    play_count = stats.get("playcount", "0")
+    
+    fields["lfm_listeners"] = listen_count
+    fields["lfm_playcount"] = play_count
     fields["lfm_mbid"] = a.get("mbid", "")
     fields["lfm_on_tour"] = "Yes" if str(a.get("ontour", "0")) == "1" else "No"
+    
+    # Historical Tracking
+    fields["lfm_listeners_running"] = update_history(fields["lfm_listeners_running"], listen_count, today)
+    fields["lfm_playcount_running"] = update_history(fields["lfm_playcount_running"], play_count, today)
     
     tags = [t["name"] for t in a.get("tags", {}).get("tag", []) if isinstance(t, dict)]
     fields["lfm_tags"] = ", ".join(tags)
@@ -146,6 +200,12 @@ def enrich_lastfm_artist(artist_name: str, lastfm_url: str) -> dict:
         albums = albums_data["topalbums"].get("album", [])
         fields["lfm_top_albums"] = ", ".join(al["name"] for al in albums if isinstance(al, dict))
         fields["lfm_top_albums_urls"] = ", ".join(al.get("url", "") for al in albums if isinstance(al, dict))
+
+    # 5. Scrape Events (Slug-based name is safer)
+    target_event_name = slug if slug else artist_name
+    events, e_ids = scrape_lastfm_events(target_event_name)
+    fields["lfm_events_json"] = json.dumps(events, ensure_ascii=False)
+    fields["lfm_events_ids"] = ", ".join(e_ids)
 
     return fields
 
@@ -183,9 +243,9 @@ def main():
             if limit and processed_count >= limit: break
             
             rec_id = record["id"]
-            fields = record.get("fields", {})
-            lfm_url = fields.get("soc_lastfm", "").strip()
-            name = fields.get("Name", "Unknown Artist")
+            rec_fields = record.get("fields", {})
+            lfm_url = rec_fields.get("soc_lastfm", "").strip()
+            name = rec_fields.get("Name", "Unknown Artist")
 
             print(f"🔍 [{processed_count+1}] Processing: {name}", end=" ", flush=True)
             
@@ -201,7 +261,7 @@ def main():
                 continue
 
             try:
-                enriched_data = enrich_lastfm_artist(artist_name, lfm_url)
+                enriched_data = enrich_lastfm_artist(artist_name, lfm_url, rec_fields)
                 # Cleanup empty fields
                 update_fields = {k: v for k, v in enriched_data.items() if v}
                 batch_queue.append({"id": rec_id, "fields": update_fields})
