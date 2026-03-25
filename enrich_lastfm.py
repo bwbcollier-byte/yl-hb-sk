@@ -13,7 +13,7 @@ LASTFM_API_KEY   = os.environ.get("LASTFM_API_KEY", "227ce34b7a8ef247e69613c0310
 BASE_ID          = "appENJEi9WyVXFrNU"
 TABLE_ID         = "tbl49Xnh3IIYjOi5q"
 VIEW_ID          = "viw0ZWMs5Ky5rsf9d" # New view for Last.fm
-LASTFM_BASE_URL  = "http://ws.audioscrobbler.com/2.0/"
+LASTFM_BASE_URL  = "https://ws.audioscrobbler.com/2.0/"
 
 if not AIRTABLE_API_KEY:
     print("Error: AIRTABLE_API_KEY environment variable not set.")
@@ -87,35 +87,44 @@ def enrich_lastfm_artist(artist_name: str, lastfm_url: str) -> dict:
         "lfm_bio_published_date": "",
         "lfm_wiki_url": "",
         "lfm_enriched": "No",
-        "lfm_last_check": date.today().isoformat()
+        "lfm_last_check": date.today().isoformat(),
+        "lfm_similar_rtists": "",
+        "lfm_similar_artists_urls": "",
+        "lfm_top_tracks": "",
+        "lfm_top_tracks_urls": "",
+        "lfm_top_albums": "",
+        "lfm_top_albums_urls": ""
     }
 
     slug, _ = extract_artist_slug(lastfm_url)
     fields["lfm_id"] = slug if slug else ""
 
-    # 1. artist.getinfo
+    # 1. artist.getinfo (THE MAIN CALL)
     info = fetch_lastfm("artist.getinfo", artist_name)
-    if info and "artist" in info:
-        a = info["artist"]
-        stats = a.get("stats", {})
-        fields["lfm_listeners"] = stats.get("listeners", "0")
-        fields["lfm_playcount"] = stats.get("playcount", "0")
-        fields["lfm_mbid"] = a.get("mbid", "")
-        fields["lfm_on_tour"] = "Yes" if str(a.get("ontour", "0")) == "1" else "No"
-        
-        tags = [t["name"] for t in a.get("tags", {}).get("tag", []) if isinstance(t, dict)]
-        fields["lfm_tags"] = ", ".join(tags)
-        
-        fields["lfm_bio"] = clean_bio(a.get("bio", {}).get("summary", ""))
-        fields["lfm_bio_full"] = clean_bio(a.get("bio", {}).get("content", ""))
-        fields["lfm_bio_published_date"] = a.get("bio", {}).get("published", "")
-        
-        bio_link = a.get("bio", {}).get("links", {}).get("link", {})
-        fields["lfm_wiki_url"] = bio_link.get("href", "") if isinstance(bio_link, dict) else ""
-        
-        images = {img["size"]: img["#text"] for img in a.get("image", []) if img.get("#text")}
-        fields["lfm_image"] = images.get("extralarge") or images.get("large") or ""
-        fields["lfm_enriched"] = "Yes"
+    if not info or "artist" not in info:
+        print(f"  [SKIP] Skipping secondary calls as main profile failed.", flush=True)
+        return fields
+
+    a = info["artist"]
+    stats = a.get("stats", {})
+    fields["lfm_listeners"] = stats.get("listeners", "0")
+    fields["lfm_playcount"] = stats.get("playcount", "0")
+    fields["lfm_mbid"] = a.get("mbid", "")
+    fields["lfm_on_tour"] = "Yes" if str(a.get("ontour", "0")) == "1" else "No"
+    
+    tags = [t["name"] for t in a.get("tags", {}).get("tag", []) if isinstance(t, dict)]
+    fields["lfm_tags"] = ", ".join(tags)
+    
+    fields["lfm_bio"] = clean_bio(a.get("bio", {}).get("summary", ""))
+    fields["lfm_bio_full"] = clean_bio(a.get("bio", {}).get("content", ""))
+    fields["lfm_bio_published_date"] = a.get("bio", {}).get("published", "")
+    
+    bio_link = a.get("bio", {}).get("links", {}).get("link", {})
+    fields["lfm_wiki_url"] = bio_link.get("href", "") if isinstance(bio_link, dict) else ""
+    
+    images = {img["size"]: img["#text"] for img in a.get("image", []) if img.get("#text")}
+    fields["lfm_image"] = images.get("extralarge") or images.get("large") or ""
+    fields["lfm_enriched"] = "Yes"
 
     # 2. Similar Artists
     sim_data = fetch_lastfm("artist.getSimilar", artist_name, limit=10)
