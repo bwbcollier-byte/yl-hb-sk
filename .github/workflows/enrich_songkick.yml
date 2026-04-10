@@ -9,6 +9,17 @@ jobs:
   enrich_lastfm:
     runs-on: ubuntu-latest
     steps:
+      - name: Notify Supabase — start
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+        run: |
+          echo "START_TIME=$(date +%s)" >> $GITHUB_ENV
+          curl -s -X POST "$SUPABASE_URL/rest/v1/rpc/log_workflow_run" \
+            -H "apikey: $SUPABASE_SERVICE_KEY" \
+            -H "Authorization: Bearer $SUPABASE_SERVICE_KEY" \
+            -H "Content-Type: application/json" \
+            -d '{"p_workflow_id": 248599896, "p_status": "running", "p_run_id": "${{ github.run_id }}"  }'
     - name: Checkout repository
       uses: actions/checkout@v4
     - name: Set up Python
@@ -24,3 +35,17 @@ jobs:
         AIRTABLE_API_KEY: ${{ secrets.AIRTABLE_API_KEY }}
         LASTFM_API_KEY: ${{ secrets.LASTFM_API_KEY }}
       run: python enrich_lastfm.py --all
+      - name: Notify Supabase — result
+        if: always()
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+        run: |
+          DURATION=$(( $(date +%s) - $START_TIME ))
+          STATUS="${{ job.status }}"
+          PAYLOAD=$(printf '{"p_workflow_id": 248599896, "p_status": "%s", "p_duration_secs": %s, "p_run_id": "${{ github.run_id }}"}' "$STATUS" "$DURATION")
+          curl -s -X POST "$SUPABASE_URL/rest/v1/rpc/log_workflow_run" \
+            -H "apikey: $SUPABASE_SERVICE_KEY" \
+            -H "Authorization: Bearer $SUPABASE_SERVICE_KEY" \
+            -H "Content-Type: application/json" \
+            -d "$PAYLOAD"
