@@ -1,0 +1,13 @@
+[project]
+name = "yl-hb-sk"
+version = "0.1.0"
+description = "Last.fm / Songkick enrichment scraper"
+requires-python = ">=3.12"
+dependencies = [
+  "requests",
+  "beautifulsoup4",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
