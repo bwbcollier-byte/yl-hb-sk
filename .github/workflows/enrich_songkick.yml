@@ -53,9 +53,10 @@ jobs:
 
       - name: Run Last.fm enrichment
         env:
-          AIRTABLE_API_KEY: ${{ secrets.AIRTABLE_API_KEY }}
-          LASTFM_API_KEY:   ${{ secrets.LASTFM_API_KEY }}
-        run: python enrich_lastfm.py --all
+          SUPABASE_URL:         ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          LASTFM_API_KEY:       ${{ secrets.LASTFM_API_KEY }}
+        run: python enrich_lastfm_supabase.py --all
 
       - name: Notify Supabase — result
         if: always()
