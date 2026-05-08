@@ -1,0 +1,72 @@
+name: Daily Songkick Enrichment
+
+on:
+  schedule:
+    - cron: '30 */6 * * *'   # Every 6 hours, offset 30 min from Last.fm
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  enrich_songkick:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v3
+        with:
+          version: "latest"
+          enable-cache: true
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: |
+          uv pip install --system -r requirements.txt
+
+      - name: Notify Supabase — start
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+        run: |
+          echo "START_TIME=$(date +%s)" >> "$GITHUB_ENV"
+          curl -fsS -X POST "$SUPABASE_URL/rest/v1/rpc/log_workflow_run" \
+            -H "apikey: $SUPABASE_SERVICE_KEY" \
+            -H "Authorization: Bearer $SUPABASE_SERVICE_KEY" \
+            -H "Content-Type: application/json" \
+            -d '{"p_workflow_id": 0, "p_status": "running", "p_run_id": "${{ github.run_id }}"}'
+
+      - name: Run Songkick enrichment
+        env:
+          SUPABASE_URL:        ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          AIRTABLE_API_KEY:    ${{ secrets.AIRTABLE_API_KEY }}
+          SONGKICK_API_KEY:    ${{ secrets.SONGKICK_API_KEY }}
+        run: python enrich_songkick.py --all
+
+      - name: Notify Supabase — result
+        if: always()
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+        run: |
+          DURATION=$(( $(date +%s) - START_TIME ))
+          STATUS="${{ job.status }}"
+          PAYLOAD=$(printf '{"p_workflow_id": 0, "p_status": "%s", "p_duration_secs": %s, "p_run_id": "${{ github.run_id }}"}' "$STATUS" "$DURATION")
+          curl -fsS -X POST "$SUPABASE_URL/rest/v1/rpc/log_workflow_run" \
+            -H "apikey: $SUPABASE_SERVICE_KEY" \
+            -H "Authorization: Bearer $SUPABASE_SERVICE_KEY" \
+            -H "Content-Type: application/json" \
+            -d "$PAYLOAD"
